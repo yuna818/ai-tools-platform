@@ -72,11 +72,11 @@ def main():
                     try:
                         cur.execute(stmt)
                     except (pymysql.err.OperationalError, pymysql.err.ProgrammingError) as exc:
-                        # database/init.sql already contains the final schema,
-                        # so on a fresh database some ALTERs re-apply objects
-                        # that already exist. Skip those and keep going.
-                        if exc.args and exc.args[0] in (1050, 1060, 1061):
-                            print("already exists, skipping; ", end="", flush=True)
+                        # database/init.sql already contains the final schema, so
+                        # on a fresh database some ALTERs re-apply objects that
+                        # already exist or were already renamed away. Skip those.
+                        if exc.args and exc.args[0] in (1050, 1054, 1060, 1061, 1091, 1146):
+                            print("already applied, skipping; ", end="", flush=True)
                             continue
                         raise
                 cur.execute("INSERT INTO _migrations (filename) VALUES (%s)", (filename,))
