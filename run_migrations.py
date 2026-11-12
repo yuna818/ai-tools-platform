@@ -79,7 +79,7 @@ def main():
                             print("already exists, skipping; ", end="", flush=True)
                             continue
                         raise
-            cur.execute("INSERT INTO _migrations (filename) VALUES (%s)", (filename,))
+                cur.execute("INSERT INTO _migrations (filename) VALUES (%s)", (filename,))
             conn.commit()
         except Exception as exc:
             print(f"FAILED: {exc}")
