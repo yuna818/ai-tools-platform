@@ -37,7 +37,6 @@ def get_applied():
                 )
                 conn.commit()
                 return set()
-
             cur.execute("SELECT filename FROM _migrations")
             return {r["filename"] for r in cur.fetchall()}
     finally:
@@ -45,6 +44,7 @@ def get_applied():
 
 
 def main():
+
     applied = get_applied()
     migrations = sorted(
         glob.glob(str(MIGRATIONS_DIR / "migration_*.sql"))
@@ -69,8 +69,17 @@ def main():
                     stmt = stmt.strip()
                     if not stmt:
                         continue
-                    cur.execute(stmt)
-                cur.execute("INSERT INTO _migrations (filename) VALUES (%s)", (filename,))
+                    try:
+                        cur.execute(stmt)
+                    except (pymysql.err.OperationalError, pymysql.err.ProgrammingError) as exc:
+                        # database/init.sql already contains the final schema,
+                        # so on a fresh database some ALTERs re-apply objects
+                        # that already exist. Skip those and keep going.
+                        if exc.args and exc.args[0] in (1050, 1060, 1061):
+                            print("already exists, skipping; ", end="", flush=True)
+                            continue
+                        raise
+            cur.execute("INSERT INTO _migrations (filename) VALUES (%s)", (filename,))
             conn.commit()
         except Exception as exc:
             print(f"FAILED: {exc}")
