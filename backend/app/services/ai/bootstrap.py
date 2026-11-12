@@ -100,6 +100,47 @@ def _seed_from_env() -> None:
             )
 
 
+def _sync_from_env() -> None:
+    """Refresh existing provider rows from env-var AI_BACKENDS on every boot.
+
+    The one-time seed above only runs when t_ai_provider is empty, so keys
+    or endpoints added later (e.g. via Railway Variables) never reach the
+    database. This sync closes that gap. Idempotent: rows are only updated,
+    never deleted, and a provider without a key is deactivated so chat
+    never defaults to a provider that cannot work.
+    """
+    from flask import current_app
+
+    backends = current_app.config.get("AI_BACKENDS", {}) or {}
+    if not backends:
+        return
+
+    for key, cfg in backends.items():
+        api_key = cfg.get("api_key", "") or ""
+        base_url = cfg.get("base_url", "") or ""
+        execute(
+            "UPDATE t_ai_provider SET base_url = %s, api_key = %s, is_active = %s "
+            "WHERE `key` = %s",
+            (base_url, api_key, 1 if api_key else 0, key),
+        )
+
+        chat_model = cfg.get("chat_model")
+        if not chat_model:
+            continue
+        execute(
+            "UPDATE t_ai_model m JOIN t_ai_provider p ON p.id = m.provider_id "
+            "SET m.is_default = 0 WHERE p.`key` = %s",
+            (key,),
+        )
+        execute(
+            "INSERT INTO t_ai_model "
+            "(provider_id, model_id, display_name, is_active, is_default, sort_order) "
+            "SELECT id, %s, %s, 1, 1, 0 FROM t_ai_provider WHERE `key` = %s "
+            "ON DUPLICATE KEY UPDATE is_active = 1, is_default = 1",
+            (chat_model, chat_model, key),
+        )
+
+
 def bootstrap_ai_providers() -> None:
     """Create tables if missing and seed from env when empty. Safe to re-run."""
     try:
@@ -116,3 +157,9 @@ def bootstrap_ai_providers() -> None:
             log.info("Seeded t_ai_provider from env config")
     except Exception:
         log.warning("t_ai_provider seed check failed (non-fatal):", exc_info=True)
+
+    # Sync existing rows from env on every boot (see _sync_from_env).
+    try:
+        _sync_from_env()
+    except Exception:
+        log.warning("t_ai_provider env sync failed (non-fatal):", exc_info=True)
