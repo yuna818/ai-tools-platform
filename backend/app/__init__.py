@@ -63,12 +63,16 @@ def create_app() -> Flask:
 
     # Top up the owner's credits to effectively unlimited (idempotent;
     # non-fatal on failure). Set UNLIMITED_CREDITS_EMAIL in Railway
-    # Variables to the account email to enable it.
+    # Variables to the account email(s), comma-separated, to enable it.
     try:
         with app.app_context():
             from .utils.mysql import execute as _execute
-            _owner_email = (os.getenv("UNLIMITED_CREDITS_EMAIL", "") or "").strip()
-            if _owner_email:
+            _owner_emails = [
+                e.strip()
+                for e in (os.getenv("UNLIMITED_CREDITS_EMAIL", "") or "").split(",")
+                if e.strip()
+            ]
+            for _owner_email in _owner_emails:
                 _execute(
                     "UPDATE t_user SET credits = 999999999 "
                     "WHERE email = %s AND credits < 999999999 AND is_delete = 0",
