@@ -31,8 +31,28 @@ def normalize_messages(messages) -> list[dict]:
 
     if not normalized:
         raise AppError(ErrorCode.PARAM_INVALID, "messages 格式不合法")
-    return normalized
+    return trim_messages_for_model(normalized)
+# Max conversation history sent to the model per request. The client sends
+# the full conversation every time, so without a cap the input tokens grow
+# without bound and hit the free-tier per-minute limit (Groq 429: qwen
+# allows 7000 input tokens/min). The system prompt is inserted separately
+# by the endpoints, so only the user/assistant history is trimmed here;
+# the full conversation stays in  the database and the persisted character
+# state is unaffected.
 
+MAX_MODEL_HISTORY_MESSAGES = 12
+
+
+def trim_messages_for_model(messages: list[dict], max_messages: int = MAX_MODEL_HISTORY_MESSAGES) -> list[dict]:
+    """Keep leading system message(s) plus the last `max_messages` messages."""
+    if len(messages) <= max_messages:
+        return messages
+    system_msgs = []
+    rest = messages
+    while rest and rest[0]["role"] == "system":
+        system_msgs.append(rest[0])
+        rest = rest[1:]
+    return system_msgs + rest[-max_messages:]
 
 def inject_scene_context(messages: list[dict], scene_context: dict) -> list[dict]:
     """Prefix the latest user message with the current scene context (in place)."""
