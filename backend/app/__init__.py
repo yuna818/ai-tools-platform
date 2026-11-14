@@ -45,7 +45,7 @@ def create_app() -> Flask:
 
     # Setup logging first
     logger = setup_logging(app)
-    
+
     init_extensions(app)
     init_babel(app)
     register_v1_blueprints(app)
@@ -60,7 +60,23 @@ def create_app() -> Flask:
             bootstrap_ai_providers()
     except Exception:
         logger.warning("AI provider bootstrap failed (non-fatal):", exc_info=True)
-    
+
+    # Top up the owner's credits to effectively unlimited (idempotent;
+    # non-fatal on failure). Set UNLIMITED_CREDITS_EMAIL in Railway
+    # Variables to the account email to enable it.
+    try:
+        with app.app_context():
+            from .utils.mysql import execute as _execute
+            _owner_email = (os.getenv("UNLIMITED_CREDITS_EMAIL", "") or "").strip()
+            if _owner_email:
+                _execute(
+                    "UPDATE t_user SET credits = 999999999 "
+                    "WHERE email = %s AND credits < 999999999 AND is_delete = 0",
+                    (_owner_email,),
+                )
+    except Exception:
+        logger.warning("Owner credit top-up failed (non-fatal):", exc_info=True)
+
     # Start recommendation scheduler (daemon thread, won't block)
     try:
         from .services.scheduler import start_scheduler
